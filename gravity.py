@@ -57,16 +57,10 @@ def update_simulation():
     # For each main ball, add its gravitational effect.
     for main in main_balls:
         # Compute differences from orbit balls to the main ball.
-        diff = np.empty_like(positions)
-        diff[:, 0] = main.x - positions[:, 0]
-        diff[:, 1] = main.y - positions[:, 1]
-        # Squared distances.
-        dist_sq = diff[:, 0]**2 + diff[:, 1]**2
-        # Compute distances; add a small epsilon to avoid division-by-zero.
-        dist = np.sqrt(dist_sq) + 1e-8
-        # Ensure that the distance is never below the sum of radii (to avoid huge forces)
-        min_dist = main.r + radii
-        dist = np.maximum(dist, min_dist)
+        diff = np.array([main.x, main.y]) - positions
+        dist = np.hypot(diff[:, 0], diff[:, 1])
+        # Ensure that the distance is never below the sum of radii
+        dist = np.maximum(dist, main.r + radii)
         # Compute the factor (G * mass / distance^3) for each orbit ball.
         factor = G * main.mass / (dist**3)
         # Update acceleration contributions.
@@ -84,33 +78,30 @@ def update_simulation():
     # Collision detection with each main ball.
     for main in main_balls:
         diff = positions - np.array([main.x, main.y])
-        dist = np.sqrt(diff[:, 0]**2 + diff[:, 1]**2)
+        dist = np.hypot(diff[:, 0], diff[:, 1])
         min_dist = main.r + radii
         # Find indices of orbit balls that are too close.
-        colliding = dist < min_dist
-        if np.any(colliding):
-            idx = np.where(colliding)[0]
-            # Avoid division by zero by replacing zeros with ones temporarily.
-            safe_dist = np.where(dist[idx] == 0, 1, dist[idx])
-            # Normalized collision vectors.
-            norm = diff[idx] / safe_dist[:, None]
-            # Reset velocity for collided balls.
-            velocities[idx] = 0
-            # Place the orbit ball exactly at the collision boundary.
-            positions[idx] = np.array(
-                [main.x, main.y]) + norm * min_dist[idx, None]
+        idx = np.where(dist < min_dist)[0]
+        # Avoid division by zero by replacing zeros with ones temporarily.
+        safe_dist = np.where(dist[idx] == 0, 1, dist[idx])
+        # Normalized collision vectors.
+        norm = diff[idx] / safe_dist[:, None]
+        # Reset velocity for collided balls.
+        velocities[idx] = 0
+        # Place the orbit ball exactly at the collision boundary.
+        positions[idx] = np.array(
+            [main.x, main.y]) + norm * min_dist[idx, None]
+
+    tot_speed = np.hypot(velocities[:, 0], velocities[:, 1])
+    col_speed = (tot_speed/max_speed_color*255).astype(int)
+    col_val = np.clip(col_speed, 0, 255, dtype=int)
 
     # Update the canvas items.
     for i, cid in enumerate(canvas_ids):
-        r = radii[i]
-        x, y = positions[i]
-        canvas.coords(cid, x - r, y - r, x + r, y + r)
+        canvas.coords(cid, positions[i, 0] - radii[i], positions[i, 1] - radii[i],
+                      positions[i, 0] + radii[i], positions[i, 1] + radii[i])
         # Update color based on speed.
-        speed = math.hypot(velocities[i, 0], velocities[i, 1])
-
-        norm_val = min(speed / max_speed_color, 1)
-        col_val = int(255 * norm_val)
-        color = f"#{col_val:02x}{col_val:02x}{col_val:02x}"
+        color = f"#{col_val[i]:02x}{col_val[i]:02x}{col_val[i]:02x}"
         canvas.itemconfig(cid, fill=color)
 
     root.after(int(dt * sim_speed), update_simulation)
@@ -139,16 +130,16 @@ if __name__ == '__main__':
     # -------------------------------
     # Setup orbiting balls in vectorized arrays.
     # -------------------------------
-    N_ORBIT = 1500  # You can increase this number
+    N_ORBIT = 2000  # You can increase this number
 
     # Each orbiting ball has:
     #   position: (x, y)
     #   velocity: (vx, vy)
     #   radius: r
     #   canvas id: used for drawing
-    positions = np.zeros((N_ORBIT, 2), dtype=np.float64)
-    velocities = np.zeros((N_ORBIT, 2), dtype=np.float64)
-    radii = np.full(N_ORBIT, 1.5, dtype=np.float64)
+    positions = np.empty((N_ORBIT, 2), dtype=np.float32)
+    velocities = np.empty((N_ORBIT, 2), dtype=np.float32)
+    radii = np.full(N_ORBIT, 1.5, dtype=np.float32)
     canvas_ids = np.empty(N_ORBIT, dtype=np.int32)
 
     # Initialize orbiting balls: position them around a randomly chosen main ball.
